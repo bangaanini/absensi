@@ -1,96 +1,112 @@
-import { useEffect, useState } from 'react'
-import { supabase } from '../utils/supabaseClient'
-
-type Row = {
-  id: number
-  nama: string
-  minggu: string | null
-  senin: string | null
-  selasa: string | null
-  rabu: string | null
-  kamis: string | null
-  jumat: string | null
-  sabtu: string | null
-}
+import { useState, useEffect } from "react";
 
 export default function Home() {
-  const [data, setData] = useState<Row[]>([])
+  const [names, setNames] = useState([]);
+  const [newName, setNewName] = useState("");
+  const [editId, setEditId] = useState(null);
+  const [editName, setEditName] = useState("");
 
+  // Ambil data awal
   useEffect(() => {
-    fetchData()
-    const channel = supabase
-      .channel('realtime:absensi')
-      .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'absensi' },
-        () => fetchData()
-      ).subscribe()
-    return () => { supabase.removeChannel(channel) }
-  }, [])
+    fetch("/api/names")
+      .then((res) => res.json())
+      .then((data) => setNames(data));
+  }, []);
 
-  async function fetchData() {
-    const { data } = await supabase.from('absensi').select('*').order('id')
-    setData(data || [])
-  }
+  // Tambah nama
+  const addName = async () => {
+    if (!newName.trim()) return;
+    const res = await fetch("/api/names", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: newName }),
+    });
+    const data = await res.json();
+    if (!data.error) {
+      setNames([...names, data]);
+      setNewName("");
+    }
+  };
 
-  async function updateCell(id:number, field:string, value:string) {
-    await supabase.from('absensi').update({ [field]: value }).eq('id', id)
-  }
-
-  function hitungTotal(row:Row) {
-    const kolom = [row.minggu,row.senin,row.selasa,row.rabu,row.kamis,row.jumat,row.sabtu]
-    let hari=0, jam=0
-    kolom.forEach(v=>{
-      if(!v) return
-      const val = v.toLowerCase()
-      if(val.includes('0.5')) hari+=0.5
-      else if(val.includes('1.5')) hari+=1.5
-      else if(val.includes('2 hari')) hari+=2
-      else if(val.includes('1 hari 2 jam')) { hari+=1; jam+=2 }
-      else if(val.includes('1 hari')) hari+=1
-    })
-    const hariText = (hari % 1 === 0 ? hari.toFixed(0) : hari) + ' hari'
-    return jam > 0 ? `${hariText} ${jam} jam` : hariText
-  }
+  // Edit nama
+  const updateName = async () => {
+    if (!editName.trim()) return;
+    const res = await fetch("/api/names", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: editId, name: editName }),
+    });
+    const data = await res.json();
+    if (!data.error) {
+      setNames(names.map(n => n.id === editId ? data : n));
+      setEditId(null);
+      setEditName("");
+    }
+  };
 
   return (
-    <div style={{padding:'1rem'}}>
-      <h1 style={{fontWeight:'bold',fontSize:'1.2rem',marginBottom:'1rem'}}>Absensi Proyek</h1>
-      <table style={{borderCollapse:'collapse',width:'100%'}}>
+    <div className="max-w-xl mx-auto p-4">
+      <h1 className="text-2xl font-bold mb-4">Absensi Proyek</h1>
+
+      {/* Form tambah nama */}
+      <div className="flex gap-2 mb-6">
+        <input
+          className="border p-2 flex-1 rounded"
+          placeholder="Nama baru"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+        />
+        <button
+          onClick={addName}
+          className="bg-green-600 text-white px-4 py-2 rounded"
+        >
+          Tambah
+        </button>
+      </div>
+
+      {/* Tabel nama */}
+      <table className="w-full border">
         <thead>
-          <tr style={{background:'#eee'}}>
-            <th style={{border:'1px solid #ccc',padding:'0.5rem'}}>Nama</th>
-            {['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'].map(d=>
-              <th key={d} style={{border:'1px solid #ccc',padding:'0.5rem'}}>{d}</th>)}
-            <th style={{border:'1px solid #ccc',padding:'0.5rem'}}>Total</th>
+          <tr className="bg-gray-200">
+            <th className="border p-2">Nama</th>
+            <th className="border p-2">Aksi</th>
           </tr>
         </thead>
         <tbody>
-          {data.map(row=>(
-            <tr key={row.id}>
-              <td style={{border:'1px solid #ccc',padding:'0.5rem'}}>{row.nama}</td>
-              {['minggu','senin','selasa','rabu','kamis','jumat','sabtu'].map(col=>(
-                <td key={col} style={{border:'1px solid #ccc',padding:'0.2rem'}}>
-                  <select
-                    style={{width:'100%'}}
-                    value={(row as any)[col] || ''}
-                    onChange={e=>updateCell(row.id,col,e.target.value)}
+          {names.map((n) => (
+            <tr key={n.id}>
+              <td className="border p-2">
+                {editId === n.id ? (
+                  <input
+                    className="border p-1 w-full"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                  />
+                ) : (
+                  n.name
+                )}
+              </td>
+              <td className="border p-2 text-center">
+                {editId === n.id ? (
+                  <button
+                    onClick={updateName}
+                    className="bg-blue-500 text-white px-3 py-1 rounded"
                   >
-                    <option value="">x</option>
-                    <option value="0.5 hari">0,5 hari</option>
-                    <option value="1 hari">1 hari</option>
-                    <option value="1.5 hari">1,5 hari</option>
-                    <option value="2 hari">2 hari</option>
-                    <option value="1 hari 2 jam">1 hari 2 jam</option>
-                  </select>
-                </td>
-              ))}
-              <td style={{border:'1px solid #ccc',padding:'0.5rem'}}>
-                {hitungTotal(row)}
+                    Simpan
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => { setEditId(n.id); setEditName(n.name); }}
+                    className="bg-yellow-500 text-white px-3 py-1 rounded"
+                  >
+                    Edit
+                  </button>
+                )}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
     </div>
-  )
+  );
 }
